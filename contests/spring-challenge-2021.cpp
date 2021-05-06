@@ -6,8 +6,11 @@
 
 using namespace std;
 
+struct Tree;
+
 struct Cell {
   int index, richness, neigh0, neigh1, neigh2, neigh3, neigh4, neigh5;
+  Tree *tree;
 };
 
 istream &operator>>(istream &is, Cell &c) {
@@ -25,9 +28,9 @@ istream &operator>>(istream &is, Tree &t) {
 }
 
 struct Action {
-  static constexpr int completingCost{4};
-  static constexpr char wait_name[]{"WAIT"}, complete_name[]{"COMPLETE"};
-  enum class Type { wait, complete } type;
+  static constexpr char wait_name[]{"WAIT"}, complete_name[]{"COMPLETE"},
+      grow_name[]{"GROW"};
+  enum class Type { wait, complete, grow } type;
   int index;
 };
 
@@ -39,6 +42,9 @@ istream &operator>>(istream &is, Action &a) {
   else if (name == a.complete_name) {
     a.type = Action::Type::complete;
     is >> a.index;
+  } else if (name == a.grow_name) {
+    a.type = Action::Type::grow;
+    is >> a.index;
   }
   return is;
 }
@@ -46,12 +52,12 @@ istream &operator>>(istream &is, Action &a) {
 ostream &operator<<(ostream &os, const Action &a) {
   switch (a.type) {
   case Action::Type::wait:
-    os << a.wait_name;
-    break;
+    return os << a.wait_name;
   case Action::Type::complete:
-    os << a.complete_name << ' ' << a.index;
+    return os << a.complete_name << ' ' << a.index;
+  case Action::Type::grow:
+    return os << a.grow_name << ' ' << a.index;
   }
-  return os;
 }
 
 struct Game {
@@ -59,12 +65,17 @@ struct Game {
   bool oppIsWaiting;
   vector<Cell> cells{};
   vector<Tree> trees{};
+  vector<int> treeCountersBySize{0, 0, 0};
   vector<Action> possibleActions{};
 
   int evaluateAction(Action a) {
+    static constexpr int completingCost{4};
     switch (a.type) {
     case Action::Type::complete:
       return nutrients + 2 * (cells.at(a.index).richness - 1);
+    case Action::Type::grow:
+      return nutrients + 2 * (cells.at(a.index).richness - 1) -
+             treeCountersBySize.at(cells.at(a.index).tree->size);
     case Action::Type::wait:
       return 0;
     }
@@ -75,14 +86,6 @@ struct Game {
     auto cmp = [this](Action a, Action b) {
       return evaluateAction(a) <= evaluateAction(b);
     };
-    const int sun{mySun};
-    possibleActions.erase(remove_if(possibleActions.begin(),
-                                    possibleActions.end(),
-                                    [sun](Action a) {
-                                      return a.type != Action::Type::wait &&
-                                             sun < Action::completingCost;
-                                    }),
-                          possibleActions.end());
     sort(possibleActions.begin(), possibleActions.end(), cmp);
     return possibleActions.back();
   }
@@ -99,13 +102,19 @@ istream &operator>>(istream &is, Game &g) {
       g.cells.at(x.index) = x;
     }
   }
+  for (auto &x : g.cells)
+    x.tree = nullptr;
   is >> g.day >> g.nutrients >> g.mySun >> g.myScore >> g.oppSun >>
       g.oppScore >> g.oppIsWaiting;
   size_t numberOfTrees;
   is >> numberOfTrees;
   g.trees.resize(numberOfTrees);
-  for (auto &x : g.trees)
+  fill(g.treeCountersBySize.begin(), g.treeCountersBySize.end(), 0);
+  for (auto &x : g.trees) {
     is >> x;
+    g.cells.at(x.cellIndex).tree = &x;
+    ++g.treeCountersBySize.at(x.size - 1);
+  }
   size_t numberOfPossibleActions;
   is >> numberOfPossibleActions;
   g.possibleActions.resize(numberOfPossibleActions);
@@ -115,9 +124,13 @@ istream &operator>>(istream &is, Game &g) {
 }
 
 int main() {
-  Game game{};
-  while (true) {
-    cin >> game;
-    cout << game.pickAction() << endl;
+  try {
+    Game game{};
+    while (true) {
+      cin >> game;
+      cout << game.pickAction() << endl;
+    }
+  } catch (exception e) {
+    cerr << e.what() << endl;
   }
 }
